@@ -14,6 +14,7 @@ app = Flask(__name__)
 # `UPLOAD_FOLDER` specifies the directory where files are temporarily stored.
 # Without this, files would need to be manually managed, increasing complexity.
 app.config['UPLOAD_FOLDER'] = './uploads'
+app.config['RAW_TRANSCRIPTS_FOLDER'] = './raw_transcripts'  # Correctly define the folder path here
 
 # A secret key is required for flashing messages, which are temporary notifications.
 # If `secret_key` is not set, the application will be unable to display feedback messages.
@@ -109,6 +110,52 @@ def generate_blog():
 # Main entry point to start the application.
 # `if __name__ == '__main__':` ensures this code only runs when the script is executed directly.
 # Without this, the app might not run if imported as a module.
+
+
+
+
+
+
+@app.route('/real_time_capture', methods=['POST'])
+def real_time_capture():
+    try:
+        # Run whisper.py and capture both stdout and stderr
+        result = subprocess.check_output(['python', r'transcription\whisper.py'], text=True, stderr=subprocess.STDOUT)
+        
+        # Extract only the transcription text from the last line of the output
+        transcription = result.strip().splitlines()[-1]
+
+        # Ensure the raw_transcripts folder exists using the correct config key
+        os.makedirs(app.config['RAW_TRANSCRIPTS_FOLDER'], exist_ok=True)
+        
+        # Save the transcription to a .txt file in the raw_transcripts directory
+        transcription_file_path = os.path.join(app.config['RAW_TRANSCRIPTS_FOLDER'], 'real_time_transcription.txt')
+        with open(transcription_file_path, 'w') as file:
+            file.write(transcription)
+
+        return transcription
+
+    except subprocess.CalledProcessError as e:
+        # Print the full error output to help debug
+        print(f"Error with real-time capture: {e.output}")
+        return "Error during real-time capture", 500
+
+@app.route('/post_on_medium', methods=['POST'])
+def post_on_medium():
+    try:
+        # Define the path to the Medium_platform_posting.py script
+        script_path = os.path.join(os.getcwd(), 'path_to_script_directory', 'Medium_platform_posting.py')
+        
+        # Execute the script
+        result = subprocess.run(['python', script_path], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            return jsonify({'message': 'Successfully posted on Medium!'}), 200
+        else:
+            return jsonify({'error': result.stderr}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # Ensure the upload directory exists; create it if necessary.
     # `os.makedirs` prevents errors if the folder is missing.

@@ -9,11 +9,13 @@
 <body>
     <h1>Amplify.co Beta</h1>
     
-    <h2>Upload Audio File</h2>
+    <h2>Upload Audio File or Capture Real-Time Audio</h2>
     <form action="/transcribe_audio" method="post" enctype="multipart/form-data">
         <label for="file">Select an audio file (WAV format):</label><br>
         <input type="file" name="file" id="file" accept=".wav"><br><br>
+        
         <input type="submit" value="Upload and Transcribe">
+        <button type="button" onclick="startRealTimeCapture()">Real-Time Audio Capture</button>
     </form>
 
     <h3>Transcription Result:</h3>
@@ -21,25 +23,54 @@
 
     <h3>Generate Blog:</h3>
     <button onclick="generateBlog()">Generate a Blog</button><br><br>
-    
     <textarea id="Blog" rows="10" cols="80" readonly></textarea>
+
+    <h3>Post on Medium:</h3>
+    <button onclick="postOnMedium()">Post on Medium</button><br><br>
+    <div id="postStatus"></div>
 
     <script>
         async function generateBlog() {
             try {
-                const response = await fetch('/run-llm', { method: 'POST' });
+                const response = await fetch('/generate_blog', { method: 'POST' });
                 const data = await response.text();
                 document.getElementById('Blog').value = data;
             } catch (error) {
                 console.error("Error generating blog:", error);
             }
         }
-    </script>
-</body>
-</html>
 
-    <script>
-        // Optional client-side JavaScript for additional interaction
+        async function startRealTimeCapture() {
+            const transcriptionResult = document.getElementById('transcriptionResult');
+            transcriptionResult.value = "Recording... Please wait.";
+
+            try {
+                const response = await fetch('/real_time_capture', { method: 'POST' });
+                const data = await response.text();
+                transcriptionResult.value = data;
+            } catch (error) {
+                transcriptionResult.value = "Error with real-time capture.";
+                console.error("Error with real-time capture:", error);
+            }
+        }
+
+        async function postOnMedium() {
+            const postStatus = document.getElementById('postStatus');
+            postStatus.innerText = "Posting to Medium...";
+
+            try {
+                const response = await fetch('/post_on_medium', { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    postStatus.innerText = "Successfully posted on Medium!";
+                } else {
+                    postStatus.innerText = `Error: ${data.error}`;
+                }
+            } catch (error) {
+                postStatus.innerText = "Error posting on Medium.";
+                console.error("Error posting on Medium:", error);
+            }
+        }
     </script>
 </body>
 </html>
