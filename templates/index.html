@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Transcription</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <h1>Amplify.co Beta</h1>
+    
+    <h2>Upload Audio File</h2>
+    <form action="/transcribe_audio" method="post" enctype="multipart/form-data">
+        <label for="file">Select an audio file (WAV format):</label><br>
+        <input type="file" name="file" id="file" accept=".wav"><br><br>
+        <input type="submit" value="Upload and Transcribe">
+    </form>
+
+    <h3>Transcription Result:</h3>
+    <textarea id="transcriptionResult" rows="10" cols="80" readonly>{{ transcription }}</textarea>
+
+    <h3>Generate Blog:</h3>
+    <button onclick="generateBlog()">Generate a Blog</button><br><br>
+    
+    <textarea id="Blog" rows="10" cols="80" readonly></textarea>
+
+    <script>
+        async function generateBlog() {
+            try {
+                const response = await fetch('/run-llm', { method: 'POST' });
+                const data = await response.text();
+                document.getElementById('Blog').value = data;
+            } catch (error) {
+                console.error("Error generating blog:", error);
+            }
+        }
+    </script>
+</body>
+</html>
+
+    <script>
+        // Optional client-side JavaScript for additional interaction
+    </script>
+</body>
+</html>

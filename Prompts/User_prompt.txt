@@ -1,0 +1,7 @@
+You are given a data/text which is conversation/talk {{transcript_data}}. You have to give a title to the transcript and generate a blog in paragraph which can posted out on medium/substack platform.
+
+
+The errors shold be removed,clarify and convert it into a readable blog
+
+It should have a simple title.Also you have maintain the essence of the transcript by preserving the originality and cohesiveness.
+
