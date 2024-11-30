@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio Transcription</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="templates\styles.css">
+    <!-- Include Stripe Buy Button script -->
+    <script async src="https://js.stripe.com/v3/buy-button.js"></script>
 </head>
 <body>
     <h1>Amplify.co Beta</h1>
@@ -15,7 +17,8 @@
         <input type="file" name="file" id="file" accept=".wav"><br><br>
         
         <input type="submit" value="Upload and Transcribe">
-        <button type="button" onclick="startRealTimeCapture()">Real-Time Audio Capture</button>
+        <button type="button" onclick="startRealTimeCapture()">Start Real-Time Audio Capture</button>
+        <button type="button" onclick="stopRealTimeCapture()">Stop Listening</button>
     </form>
 
     <h3>Transcription Result:</h3>
@@ -29,6 +32,15 @@
     <button onclick="postOnMedium()">Post on Medium</button><br><br>
     <div id="postStatus"></div>
 
+    <!-- Stripe Buy Button -->
+    <div class="stripe-buy-button-container">
+        <h2>Subscribe to Premium Transcription Services</h2>
+        <stripe-buy-button
+            buy-button-id="buy_btn_1QJywiFmbot7XgcaOZooLmS8"
+            publishable-key="pk_test_51QJykqFmbot7Xgca5JiJ7GrmXA4L001b3RvIrnxCLpUFqZRkB86IHIDTe6FBGiK024sWMWZ1hWMv3xcm3yfLImSx00uPiZyU9Q"
+        ></stripe-buy-button>
+    </div>
+
     <script>
         async function generateBlog() {
             try {
@@ -41,18 +53,41 @@
         }
 
         async function startRealTimeCapture() {
-            const transcriptionResult = document.getElementById('transcriptionResult');
-            transcriptionResult.value = "Recording... Please wait.";
+    const transcriptionResult = document.getElementById('transcriptionResult');
+    transcriptionResult.value = "Recording... Please wait.";
 
-            try {
-                const response = await fetch('/real_time_capture', { method: 'POST' });
-                const data = await response.text();
-                transcriptionResult.value = data;
-            } catch (error) {
-                transcriptionResult.value = "Error with real-time capture.";
-                console.error("Error with real-time capture:", error);
-            }
+    try {
+        const response = await fetch('/start_real_time_capture', { method: 'POST' });
+        if (response.ok) {
+            transcriptionResult.value = "Recording started. Speak now!";
+        } else {
+            transcriptionResult.value = "Error starting real-time capture.";
         }
+    } catch (error) {
+        transcriptionResult.value = "Error starting real-time capture.";
+        console.error("Error starting real-time capture:", error);
+    }
+}
+
+async function stopRealTimeCapture() {
+    const transcriptionResult = document.getElementById('transcriptionResult');
+    transcriptionResult.value = "Stopping recording... Please wait.";
+
+    try {
+        const response = await fetch('/stop_real_time_capture', { method: 'POST' });
+        if (response.ok) {
+            const data = await response.text();
+            transcriptionResult.value = data;
+        } else {
+            const errorText = await response.text();
+            transcriptionResult.value = `Error stopping real-time capture: ${errorText}`;
+            console.error("Error stopping real-time capture:", errorText);
+        }
+    } catch (error) {
+        transcriptionResult.value = "Error stopping real-time capture.";
+        console.error("Error stopping real-time capture:", error);
+    }
+}
 
         async function postOnMedium() {
             const postStatus = document.getElementById('postStatus');

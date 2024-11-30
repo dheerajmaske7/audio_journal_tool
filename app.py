@@ -1,9 +1,19 @@
 # Import necessary libraries
 from flask import Flask, request, render_template, flash, jsonify
 from transcription.vosk_model import VoskTranscriptionModel  # Vosk model for audio transcription
-from transcription.conversion import convert_to_wav  # Function to convert audio to WAV format
+from transcription.conversion import convert_to_wav
+from transcription.real_time_transcription import transcribe_stream
+  # Function to convert audio to WAV format
 import os  # For handling file paths and directories
 import subprocess
+import threading  # Required for stop_event and background threading
+
+# Global variables
+is_listening = False  # Tracks whether real-time transcription is active
+transcription_result = ""  # Stores the transcription result
+stop_event = threading.Event()  # Event to signal stopping transcription
+
+
 
 # Initialize the Flask application
 # `Flask` is a micro web framework used to create web applications.
@@ -29,10 +39,7 @@ def index():
     # Without `render_template`, we would need to manually create HTML content in Python.
     return render_template('index.html')  # Render the main page with the upload form
 
-# Route to handle audio transcription after file upload.
-# `@app.route('/transcribe_audio', methods=['POST'])` binds the URL path '/transcribe_audio' to the `transcribe_audio` function.
-# This route only accepts `POST` requests, which send data from the client to the server.
-# Without this route, we could not process file uploads or provide transcription.
+
 @app.route('/transcribe_audio', methods=['POST'])
 def transcribe_audio():
     try:
@@ -89,72 +96,168 @@ def transcribe_audio():
         return render_template('index.html', transcription="")
 
 
-# New route for generating a blog
 @app.route('/generate_blog', methods=['POST'])
 def generate_blog():
     try:
-        # Run llm_main.py, assuming it generates the blog and saves it to blog_output.txt
-        subprocess.run(['python', 'llm_main.py'], check=True)
+        # Run llm_main_claude.py script to generate the blog
+        subprocess.run(['python', r'D:\NYU codes\Audio journal\transcription\llm_main_claude.py'], check=True)
 
-        # Read the content from blog_output.txt and return it as a response
-        blog_file_path = 'blog_output.txt'
-        with open(blog_file_path, 'r') as file:
-            blog_content = file.read()
+        # Read the raw content from blog_output.txt
+        blog_file_path = r'D:\NYU codes\Audio journal\Blog_generated\content.txt'
+        if not os.path.exists(blog_file_path):
+            print(f"Error: Blog content file not found at {blog_file_path}")
+            return jsonify({'error': 'Blog content file not found.'}), 500
 
-        return blog_content
+        with open(blog_file_path, 'r', encoding='utf-8') as file:
+            raw_content = file.read()
 
-    except Exception as e:
-        print(f"Error during blog generation: {e}")
-        return "Error generating blog", 500
+        # Extract title and content from the raw content
+        if "TextBlock" in raw_content:
+            # Extract using regex
+            import re
+            match = re.search(r"TextBlock\(text='Title: (.*?)\\n\\n(.*)', type='text'\)", raw_content, re.DOTALL)
+            if match:
+                title = match.group(1).strip()
+                content = match.group(2).replace("\\n", "\n").replace("\\'", "'").strip()
+            else:
+                return jsonify({'error': 'Failed to parse blog content.'}), 500
+        else:
+            return jsonify({'error': 'Invalid content format.'}), 500
 
-# Main entry point to start the application.
-# `if __name__ == '__main__':` ensures this code only runs when the script is executed directly.
-# Without this, the app might not run if imported as a module.
+        # Write title and content to separate files for Medium integration
+        title_file_path = r'D:\NYU codes\Audio journal\Blog_generated\title.txt'
+        formatted_content_path = r'D:\NYU codes\Audio journal\Blog_generated\formatted_content.txt'
 
+        with open(title_file_path, 'w', encoding='utf-8') as title_file:
+            title_file.write(title)
 
+        with open(formatted_content_path, 'w', encoding='utf-8') as content_file:
+            content_file.write(f"Title: {title}\n\nContent:\n{content}")
 
-
-
-
-@app.route('/real_time_capture', methods=['POST'])
-def real_time_capture():
-    try:
-        # Run whisper.py and capture both stdout and stderr
-        result = subprocess.check_output(['python', r'transcription\whisper.py'], text=True, stderr=subprocess.STDOUT)
-        
-        # Extract only the transcription text from the last line of the output
-        transcription = result.strip().splitlines()[-1]
-
-        # Ensure the raw_transcripts folder exists using the correct config key
-        os.makedirs(app.config['RAW_TRANSCRIPTS_FOLDER'], exist_ok=True)
-        
-        # Save the transcription to a .txt file in the raw_transcripts directory
-        transcription_file_path = os.path.join(app.config['RAW_TRANSCRIPTS_FOLDER'], 'real_time_transcription.txt')
-        with open(transcription_file_path, 'w') as file:
-            file.write(transcription)
-
-        return transcription
+        # Return the blog content for display in the text area
+        return jsonify({'title': title, 'blog_content': content}), 200
 
     except subprocess.CalledProcessError as e:
-        # Print the full error output to help debug
-        print(f"Error with real-time capture: {e.output}")
-        return "Error during real-time capture", 500
+        # Handle errors from the subprocess
+        print(f"Subprocess error: {e.stderr}")
+        return jsonify({'error': 'Failed to generate blog.'}), 500
+
+    except Exception as e:
+        # Handle unexpected errors
+        import traceback
+        print(f"Unexpected error: {e}")
+        print(traceback.format_exc())
+        return jsonify({'error': 'Unexpected server error.'}), 500
+
+
+
+@app.route('/start_real_time_capture', methods=['POST'])
+def start_real_time_capture():
+    """Start real-time transcription."""
+    global is_listening, transcription_result, stop_event
+
+    if is_listening:
+        return "Already listening!", 400
+
+    is_listening = True
+    transcription_result = ""
+    stop_event.clear()
+
+    # Run real-time transcription in a background thread
+    threading.Thread(target=run_real_time_transcription).start()
+    return "Listening started", 200
+
+
+@app.route('/stop_real_time_capture', methods=['POST'])
+def stop_real_time_capture():
+    """Stop real-time transcription and return the result."""
+    global is_listening, transcription_result, stop_event
+
+    print("Stopping real-time capture...")  # Debugging step
+
+    if not is_listening:
+        print("Not currently listening.")
+        return "Not currently listening", 400
+
+    stop_event.set()  # Signal the transcription thread to stop
+    while is_listening:  # Wait for the transcription thread to stop
+        pass
+
+    print("Transcription stopped.")  # Debugging step
+
+    # Save the transcription to a file
+    try:
+        os.makedirs(app.config['raw_transcripts'], exist_ok=True)
+        transcription_file_path = os.path.join(app.config['raw_transcripts'], 'temporary_transcript.txt')
+        with open(transcription_file_path, 'w', encoding='utf-8') as file:
+            file.write(transcription_result)
+        print(f"Transcription saved at {transcription_file_path}")  # Debugging step
+    except Exception as e:
+        print(f"Error saving transcription: {e}")
+        return "Error saving transcription", 500
+
+    return transcription_result or "No transcription available.", 200
+
+
+def run_real_time_transcription():
+    """Real-time transcription with stop control."""
+    from google.cloud import speech
+
+    client = speech.SpeechClient()
+
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=16000,
+        language_code="en-US",
+    )
+
+    streaming_config = speech.StreamingRecognitionConfig(
+        config=config,
+        interim_results=True,
+    )
+
+    with MicrophoneStream(16000, 1600) as stream:
+        audio_generator = stream.generator()
+        requests = (speech.StreamingRecognizeRequest(audio_content=content) for content in audio_generator)
+
+        responses = client.streaming_recognize(streaming_config, requests)
+
+        transcription = ""
+        try:
+            for response in responses:
+                if stop_event.is_set():  # Check if stop signal is triggered
+                    print("Stop event triggered. Ending transcription.")  # Debugging step
+                    break
+
+                for result in response.results:
+                    if result.is_final:
+                        transcription += result.alternatives[0].transcript + "\n"
+                        print(f"Final transcript: {result.alternatives[0].transcript}")  # Debugging step
+
+        except Exception as e:
+            print(f"Error during transcription: {e}")  # Debugging step
+        return transcription
+
+
+
+
 
 @app.route('/post_on_medium', methods=['POST'])
 def post_on_medium():
     try:
-        # Define the path to the Medium_platform_posting.py script
-        script_path = os.path.join(os.getcwd(), 'path_to_script_directory', 'Medium_platform_posting.py')
+        # Correct path to the Medium_platform_posting.py script
+        script_path = os.path.join(os.getcwd(), 'Medium_platform_posting.py')
         
         # Execute the script
         result = subprocess.run(['python', script_path], capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             return jsonify({'message': 'Successfully posted on Medium!'}), 200
         else:
             return jsonify({'error': result.stderr}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     # Ensure the upload directory exists; create it if necessary.
